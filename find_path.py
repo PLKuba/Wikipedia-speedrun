@@ -1,7 +1,7 @@
 from datetime import datetime
 import re
-import lxml
-
+from lxml import __version__
+print(__version__)
 
 REDIRECT_REGEX = r'<redirect title=".+" \/>'
 
@@ -30,8 +30,8 @@ start = datetime.now()
 #     while content is not None:
 #         content = file.readline()
 
-file = open("../../PycharmProjects/Wiki_speedrun/enwiki-20211201-pages-articles-multistream.xml", "r")
-file2 = open("test.txt")
+file = open("DATA/enwiki-20211220-pages-articles-multistream.xml", "r")
+file2 = open("DATA/test.xml")
 line_count = 0
 page_count = 0
 # print(file2.encoding)
