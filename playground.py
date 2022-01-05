@@ -1,3 +1,5 @@
+import json
+
 from lxml import etree
 from io import BytesIO
 import re
@@ -16,12 +18,18 @@ TEST_FILE_PATH = 'DATA/test.xml'
 REDIRECTION_REGEX = r'\[\[[^\]^\[]{1,}\]\]'
 
 config = configparser.ConfigParser()
+config.read('CONFIG/test_pgadmin4.ini')
 DATABASE = config["test_pgadmin4"]["database"]
 PASSWORD = config["test_pgadmin4"]["password"]
 USER = config["test_pgadmin4"]["user"]
 PORT = config["test_pgadmin4"]["port"]
 HOST = config["test_pgadmin4"]["host"]
 
+conn = connect(database=DATABASE, user=USER,
+               password=PASSWORD, host=HOST,
+               port=PORT)
+
+cur = conn.cursor()
 
 def measure_time(func):
     @functools.wraps(func)
@@ -58,6 +66,8 @@ def fetch_wiki_data():
 
                 wikipedia_title = None
 
+                redirections = None
+
                 if not bool(line.strip()):
                     count+=1
 
@@ -83,46 +93,54 @@ def fetch_wiki_data():
                         if element.tag.strip() == 'title':
                             database_title = element.text
 
-                        elif element.tag.strip() == 'text' \
-                            and re.search(REDIRECTION_REGEX, element.text.strip()) \
+                        elif element.tag.strip() == 'text':
+                            if re.search(REDIRECTION_REGEX, element.text.strip()) \
                             and '#REDIRECT' in element.text.strip():
-                            wikipedia_title = re.findall(REDIRECTION_REGEX, element.text.strip())[0]
+                                wikipedia_title = re.findall(REDIRECTION_REGEX, element.text.strip())[0][2:-2]
 
-                            break
+                                break
+
+                            else:
+                                redirections = re.findall(REDIRECTION_REGEX, element.text)
+
+                                redirections = json.dumps([red[2:-2] for red in redirections])
 
                     except (TypeError, IndexError, AttributeError) as e:
                         logging.warning(e)
                         print(count)
 
-                if database_title is None or wikipedia_title is None:
+                if database_title is None or wikipedia_title is None and redirections is None:
                     continue
 
-                # print("database_title: {0}\nwikipedia_title: {1}\n".format(database_title, wikipedia_title))
+                print("database_title: {0}\nwikipedia_title: {1}\nredirections: {2}\n".format(database_title, wikipedia_title, redirections))
 
                 sql = """INSERT INTO wikipedia (database_title, wikipedia_title)
                                 VALUES(%s, %s)"""
-
-                conn = connect(database=DATABASE, user=USER,
-                               password=PASSWORD, host=HOST,
-                               port=PORT)
-
-                cur = conn.cursor()
 
                 cur.execute(sql, (
                     database_title,
                     wikipedia_title
                 ))
 
-                conn.commit()
-                conn.close()
-
-                # print("Succesfully updated database")
+                print("Succesfully updated database")
+                break
 
     except (TypeError, IndexError, AttributeError) as e:
         print(e)
+
+    finally:
+        # if conn is not None:
+        #     conn.close()
+        pass
 
 def main():
     fetch_wiki_data()
 
 if __name__ == "__main__":
-    main()
+    with open(file='sql_scripts/create_wikipedia_table.sql') as f:
+        cur.execute(f.read())
+
+    # main()
+
+    conn.commit()
+    conn.close()
