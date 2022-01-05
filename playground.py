@@ -12,19 +12,27 @@ from concurrent.futures import ThreadPoolExecutor
 import functools
 
 
+# total lines in wiki file
 LINE_COUNT = 1_288_367_801
+# wikipedia file path
 WIKI_FILE_PATH = 'DATA/enwiki-20211220-pages-articles-multistream.xml'
+# wikipedia test file path
 TEST_FILE_PATH = 'DATA/test.xml'
+# regex to match redirections in page eg. "[[xyz]]"
 REDIRECTION_REGEX = r'\[\[[^\]^\[]{1,}\]\]'
 
+# get config variables
 config = configparser.ConfigParser()
 config.read('CONFIG/test_pgadmin4.ini')
+
+# configurate config variables
 DATABASE = config["test_pgadmin4"]["database"]
 PASSWORD = config["test_pgadmin4"]["password"]
 USER = config["test_pgadmin4"]["user"]
 PORT = config["test_pgadmin4"]["port"]
 HOST = config["test_pgadmin4"]["host"]
 
+# establish db connection
 conn = connect(database=DATABASE, user=USER,
                password=PASSWORD, host=HOST,
                port=PORT)
@@ -32,6 +40,7 @@ conn = connect(database=DATABASE, user=USER,
 cur = conn.cursor()
 
 
+# decorator that measures the time
 def measure_time(func):
     @functools.wraps(func)
     def dec_inner(*args, **kw):
@@ -51,14 +60,14 @@ def measure_time(func):
     return dec_inner
 
 
+# function to fetch wikipedia titles and database titles
 @measure_time
-def fetch_wiki_data():
+def fetch_wiki_titles_dbtitles():
     try:
         with open(file=WIKI_FILE_PATH, mode='r') as file:
             count = 0
 
             while count <= LINE_COUNT:
-
                 line = file.readline()
 
                 parser = etree.XMLParser()
@@ -110,10 +119,10 @@ def fetch_wiki_data():
                         logging.warning(e)
                         print(count)
 
-                if database_title is None or wikipedia_title is None and redirections is None:
+                if database_title is None or wikipedia_title is None:
                     continue
 
-                print("database_title: {0}\nwikipedia_title: {1}\nredirections: {2}\n".format(database_title, wikipedia_title, redirections))
+                print("database_title: {0}\nwikipedia_title: {1}\n".format(database_title, wikipedia_title))
 
                 sql = """INSERT INTO wikipedia (database_title, wikipedia_title)
                                 VALUES(%s, %s)"""
@@ -136,14 +145,14 @@ def fetch_wiki_data():
 
 
 def main():
-    fetch_wiki_data()
+    fetch_wiki_titles_dbtitles()
 
 
 if __name__ == "__main__":
     with open(file='sql_scripts/create_wikipedia_table.sql') as f:
         cur.execute(f.read())
 
-    # main()
+    main()
 
     conn.commit()
     conn.close()
