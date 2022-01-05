@@ -133,8 +133,10 @@ def fetch_wiki_data():
         #     conn.close()
         pass
 
+
 def main():
     fetch_wiki_data()
+
 
 if __name__ == "__main__":
     with open(file='sql_scripts/create_wikipedia_table.sql') as f:
