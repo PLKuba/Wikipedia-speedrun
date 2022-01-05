@@ -31,6 +31,7 @@ conn = connect(database=DATABASE, user=USER,
 
 cur = conn.cursor()
 
+
 def measure_time(func):
     @functools.wraps(func)
     def dec_inner(*args, **kw):
