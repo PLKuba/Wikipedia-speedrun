@@ -1,3 +1,5 @@
+DROP IF EXISTS wikipedia;
+
 CREATE TABLE wikipedia (
     id                  NOT NULL PRIMARY KEY AUTO_INCREMENT,
     database_title      varchar(255),
