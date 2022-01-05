@@ -128,5 +128,11 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# WIKIPEDIA DATA
-DATA/
+# wikipedia data
+DATA/enwiki-20211220-pages-articles-multistream.xml
+DATA/test.xml
+DATA/wiki_data.json
+
+# config files
+CONFIG/test_pgadmin4.ini
+CONFIG/pgadmin4.ini
