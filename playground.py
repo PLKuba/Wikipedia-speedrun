@@ -57,6 +57,31 @@ def fetch_wiki_titles_dbtitles():
         with open(file=WIKI_FILE_PATH, mode='r') as file:
             count = 0
 
+            get_id_by_title = """SELECT id FROM wikipedia WHERE title_to_match=%s OR title_to_match=%s"""
+
+            insert_titles = """INSERT INTO wikipedia (database_title, wikipedia_title, title_to_match)
+                                    VALUES(%s, %s, %s)"""
+
+            update_tiles = """INSERT INTO wikipedia (id)
+                                    VALUES(%s)
+                                    ON CONFLICT (id)
+                                        DO
+                                            UPDATE SET
+                                            database_title=%s,
+                                            wikipedia_title=%s"""
+
+            get_id_by_title = """SELECT id FROM wikipedia WHERE title_to_match=%s"""
+
+            insert_redirections = """INSERT INTO wikipedia (redirections, title_to_match)
+                                        VALUES(%s, %s)"""
+
+            update_redirections = """INSERT INTO wikipedia (id)
+                                        VALUES(%s)
+                                        ON CONFLICT (id)
+                                            DO
+                                                UPDATE SET
+                                                redirections=%s"""
+
             while count <= LINE_COUNT and count <=100_000:
                 line = file.readline()
 
@@ -120,16 +145,11 @@ def fetch_wiki_titles_dbtitles():
                 if database_title is not None and wikipedia_title is not None:
                     # print("database_title: {0}\nwikipedia_title: {1}\n".format(database_title, wikipedia_title))
 
-                    get_id_by_title = """SELECT id FROM wikipedia WHERE title_to_match=%s OR title_to_match=%s"""
-
                     cur.execute(get_id_by_title, (wikipedia_title, database_title))
 
                     res = cur.fetchone()
 
                     if res is None:
-                        insert_titles = """INSERT INTO wikipedia (database_title, wikipedia_title, title_to_match)
-                                VALUES(%s, %s, %s)"""
-
                         cur.execute(insert_titles, (
                             database_title,
                             wikipedia_title,
@@ -139,15 +159,6 @@ def fetch_wiki_titles_dbtitles():
                     else:
                         id = res[0]
                         # print('ID: ', id)
-
-                        # tutaj dostanies conflict on (id) i zrobisz update'a database_title i wikipedia_title
-                        update_tiles = """INSERT INTO wikipedia (id)
-                                                        VALUES(%s)
-                                                        ON CONFLICT (id)
-                                                            DO
-                                                                UPDATE SET
-                                                                database_title=%s,
-                                                                wikipedia_title=%s"""
 
                         cur.execute(update_tiles, (
                             id,
@@ -160,8 +171,6 @@ def fetch_wiki_titles_dbtitles():
                 if title_to_match_redirections is not None and redirections is not None:
                     # print("title_to_match_redirections: {0}\nredirections: [{1}, ...]\n".format(title_to_match_redirections, redirections.split(',')[0]))
 
-                    get_id_by_title = """SELECT id FROM wikipedia WHERE title_to_match=%s"""
-
                     cur.execute(get_id_by_title, (
                         title_to_match_redirections,
                     ))
@@ -169,9 +178,6 @@ def fetch_wiki_titles_dbtitles():
                     res = cur.fetchone()
 
                     if res is None:
-                        insert_redirections = """INSERT INTO wikipedia (redirections, title_to_match)
-                                                    VALUES(%s, %s)"""
-
                         cur.execute(insert_redirections, (
                             redirections,
                             title_to_match_redirections,
@@ -180,14 +186,6 @@ def fetch_wiki_titles_dbtitles():
                     else:
                         id = res[0]
                         # print('ID: ', id)
-
-                        # tutaj dostanies conflict on (id) i zrobisz update'a redirections
-                        update_redirections = """INSERT INTO wikipedia (id)
-                                                        VALUES(%s)
-                                                        ON CONFLICT (id)
-                                                            DO
-                                                                UPDATE SET
-                                                                redirections=%s"""
 
                         cur.execute(update_redirections, (
                             id,
