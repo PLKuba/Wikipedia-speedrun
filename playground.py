@@ -10,6 +10,7 @@ from concurrent.futures import CancelledError
 from concurrent.futures import ThreadPoolExecutor
 import functools
 import itertools
+from CONFIG.config import DATABASE, PASSWORD, USER, PORT, HOST
 
 
 # total lines in wiki file
@@ -20,17 +21,6 @@ WIKI_FILE_PATH = 'DATA/enwiki-20211220-pages-articles-multistream.xml'
 TEST_FILE_PATH = 'DATA/test.xml'
 # regex to match redirections in page eg. "[[xyz]]"
 REDIRECTION_REGEX = r'\[\[[^\]^\[]{1,}\]\]'
-
-# get config variables
-config = configparser.ConfigParser()
-config.read('CONFIG/test_pgadmin4.ini')
-
-# configurate config variables
-DATABASE = config["test_pgadmin4"]["database"]
-PASSWORD = config["test_pgadmin4"]["password"]
-USER = config["test_pgadmin4"]["user"]
-PORT = config["test_pgadmin4"]["port"]
-HOST = config["test_pgadmin4"]["host"]
 
 # establish db connection
 conn = connect(database=DATABASE, user=USER,
@@ -206,7 +196,7 @@ def fetch_wiki_titles_dbtitles():
 
                     continue
 
-        print("Succesfully updated database")
+        # print("Succesfully updated database")
 
     except (TypeError, IndexError, KeyError, AttributeError) as e:
         print(e)
