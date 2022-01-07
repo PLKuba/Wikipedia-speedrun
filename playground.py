@@ -57,7 +57,7 @@ def fetch_wiki_titles_dbtitles():
         with open(file=WIKI_FILE_PATH, mode='r') as file:
             count = 0
 
-            get_id_by_title = """SELECT id FROM wikipedia WHERE title_to_match=%s OR title_to_match=%s"""
+            get_id_by_title_titles = """SELECT id FROM wikipedia WHERE title_to_match=%s OR title_to_match=%s"""
 
             insert_titles = """INSERT INTO wikipedia (database_title, wikipedia_title, title_to_match)
                                     VALUES(%s, %s, %s)"""
@@ -70,7 +70,7 @@ def fetch_wiki_titles_dbtitles():
                                             database_title=%s,
                                             wikipedia_title=%s"""
 
-            get_id_by_title = """SELECT id FROM wikipedia WHERE title_to_match=%s"""
+            get_id_by_title_redirections = """SELECT id FROM wikipedia WHERE title_to_match=%s"""
 
             insert_redirections = """INSERT INTO wikipedia (redirections, title_to_match)
                                         VALUES(%s, %s)"""
@@ -139,13 +139,16 @@ def fetch_wiki_titles_dbtitles():
                                     title_to_match_redirections = title_to_match_redirections_f()[0].lower()
 
                     except (TypeError, IndexError, KeyError, AttributeError) as e:
-                        logging.warning(e)
+                        logging.exception(e)
                         print(count)
 
                 if database_title is not None and wikipedia_title is not None:
                     # print("database_title: {0}\nwikipedia_title: {1}\n".format(database_title, wikipedia_title))
 
-                    cur.execute(get_id_by_title, (wikipedia_title, database_title))
+                    cur.execute(get_id_by_title_titles, (
+                        wikipedia_title,
+                        database_title,
+                    ))
 
                     res = cur.fetchone()
 
@@ -171,7 +174,7 @@ def fetch_wiki_titles_dbtitles():
                 if title_to_match_redirections is not None and redirections is not None:
                     # print("title_to_match_redirections: {0}\nredirections: [{1}, ...]\n".format(title_to_match_redirections, redirections.split(',')[0]))
 
-                    cur.execute(get_id_by_title, (
+                    cur.execute(get_id_by_title_redirections, (
                         title_to_match_redirections,
                     ))
 
@@ -197,10 +200,10 @@ def fetch_wiki_titles_dbtitles():
         # print("Succesfully updated database")
 
     except (TypeError, IndexError, KeyError, AttributeError) as e:
-        print(e)
+        logging.exception(e)
 
     finally:
-        if conn is not None:
+        if conn.closed:
             conn.close()
 
 
