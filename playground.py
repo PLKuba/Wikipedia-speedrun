@@ -82,7 +82,7 @@ def fetch_wiki_titles_dbtitles():
                                                 UPDATE SET
                                                 redirections=%s"""
 
-            while count <= LINE_COUNT and count <=100_000:
+            while count <= LINE_COUNT:
                 line = file.readline()
 
                 parser = etree.XMLParser()
