@@ -212,9 +212,8 @@ def fetch_wiki_titles_dbtitles():
         print(e)
 
     finally:
-        # if conn is not None:
-        #     conn.close()
-        pass
+        if conn is not None:
+            conn.close()
 
 
 def main():
