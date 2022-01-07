@@ -4,8 +4,11 @@ import json
 import configparser
 
 
+# get config variables
 config = configparser.ConfigParser()
+config.read('CONFIG/test_pgadmin4.ini')
 
+# configurate config variables
 DATABASE = config["test_pgadmin4"]["database"]
 PASSWORD = config["test_pgadmin4"]["password"]
 USER = config["test_pgadmin4"]["user"]
@@ -20,29 +23,33 @@ cur = conn.cursor()
 
 with open(file="DATA/wiki_data.json") as f:
     page_json = json.load(f)
-    print(type(page_json))
+    # print(type(page_json))
 
 redirections = json.dumps(page_json)
 
-# sql = """INSERT INTO wikipedia_test (database_title, wikipedia_title, redirections)
-#                             VALUES(%s, %s, %s)"""
+sql = """SELECT id FROM wikipedia WHERE wikipedia_title=%s"""
 
-sql = """
-CREATE TABLE wikipedia (
-    id                  SERIAL PRIMARY KEY,
-    database_title      varchar(255),
-    wikipedia_title     varchar(255),
-    redirections        JSON
-);
-"""
+# sql = """INSERT INTO wikipedia (database_title, wikipedia_title)
+#             VALUES(%s, %s)
+#             ON CONFLICT (id)
+#                 DO
+#                     UPDATE SET
+#                     redirections = %s"""
 
-cur.execute(sql)
+# cur.execute(sql , ('test_title1', 'test_title2', redirections))
 
-# r = cur.fetchall()
+cur.execute(sql , ('test_title2',))
+
+r = cur.fetchone()
+id = r[0]
+print('Table id: ',id)
+# r = cur.fetchone()
 # print(r)
-
-# print("Table Deleted....")
-print("Table Created....")
 
 conn.commit()
 conn.close()
+
+# print("Table Deleted....")
+# print("Table Created....")
+print("Table Updated....")
+
