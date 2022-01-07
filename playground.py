@@ -67,14 +67,7 @@ def fetch_wiki_titles_dbtitles():
         with open(file=WIKI_FILE_PATH, mode='r') as file:
             count = 0
 
-            # TRY: insert on conflict
-            insert_titles_sql = """INSERT INTO wikipedia (database_title, wikipedia_title)
-                                       (SELECT %s, %s FROM wikipedia WHERE redirections = %s);"""
-
-            insert_redirections_sql = """INSERT INTO wikipedia (redirections)
-                                       (SELECT %s FROM wikipedia WHERE database_title = %s or database_title = %s);"""
-
-            while count <= LINE_COUNT:
+            while count <= LINE_COUNT and count <=100_000:
                 line = file.readline()
 
                 parser = etree.XMLParser()
@@ -135,24 +128,81 @@ def fetch_wiki_titles_dbtitles():
                         print(count)
 
                 if database_title is not None and wikipedia_title is not None:
-                    print("database_title: {0}\nwikipedia_title: {1}\n".format(database_title, wikipedia_title))
+                    # print("database_title: {0}\nwikipedia_title: {1}\n".format(database_title, wikipedia_title))
 
-                    cur.execute(insert_titles_sql, (
-                        database_title,
-                        wikipedia_title,
-                        redirections
-                    ))
+                    get_id_by_title = """SELECT id FROM wikipedia WHERE title_to_match=%s OR title_to_match=%s"""
+
+                    cur.execute(get_id_by_title, (wikipedia_title, database_title))
+
+                    res = cur.fetchone()
+
+                    if res is None:
+                        insert_titles = """INSERT INTO wikipedia (database_title, wikipedia_title, title_to_match)
+                                VALUES(%s, %s, %s)"""
+
+                        cur.execute(insert_titles, (
+                            database_title,
+                            wikipedia_title,
+                            wikipedia_title,
+                        ))
+
+                    else:
+                        id = res[0]
+                        # print('ID: ', id)
+
+                        # tutaj dostanies conflict on (id) i zrobisz update'a database_title i wikipedia_title
+                        update_tiles = """INSERT INTO wikipedia (id)
+                                                        VALUES(%s)
+                                                        ON CONFLICT (id)
+                                                            DO
+                                                                UPDATE SET
+                                                                database_title=%s,
+                                                                wikipedia_title=%s"""
+
+                        cur.execute(update_tiles, (
+                            id,
+                            database_title,
+                            wikipedia_title,
+                        ))
 
                     continue
 
                 if title_to_match_redirections is not None and redirections is not None:
-                    print("title_to_match_redirections: {0}\nredirections: {1}\n".format(title_to_match_redirections, redirections))
+                    # print("title_to_match_redirections: {0}\nredirections: [{1}, ...]\n".format(title_to_match_redirections, redirections.split(',')[0]))
 
-                    cur.execute(insert_redirections_sql, (
-                        redirections,
-                        database_title,
-                        wikipedia_title
+                    get_id_by_title = """SELECT id FROM wikipedia WHERE title_to_match=%s"""
+
+                    cur.execute(get_id_by_title, (
+                        title_to_match_redirections,
                     ))
+
+                    res = cur.fetchone()
+
+                    if res is None:
+                        insert_redirections = """INSERT INTO wikipedia (redirections, title_to_match)
+                                                    VALUES(%s, %s)"""
+
+                        cur.execute(insert_redirections, (
+                            redirections,
+                            title_to_match_redirections,
+                        ))
+
+                    else:
+                        id = res[0]
+                        # print('ID: ', id)
+
+                        # tutaj dostanies conflict on (id) i zrobisz update'a redirections
+                        update_redirections = """INSERT INTO wikipedia (id)
+                                                        VALUES(%s)
+                                                        ON CONFLICT (id)
+                                                            DO
+                                                                UPDATE SET
+                                                                redirections=%s"""
+
+                        cur.execute(update_redirections, (
+                            id,
+                            redirections,
+                        ))
 
                     continue
 
