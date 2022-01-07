@@ -1,5 +1,4 @@
 import json
-
 from lxml import etree
 from io import BytesIO
 import re
@@ -10,6 +9,7 @@ from psycopg2 import connect
 from concurrent.futures import CancelledError
 from concurrent.futures import ThreadPoolExecutor
 import functools
+import itertools
 
 
 # total lines in wiki file
@@ -67,6 +67,13 @@ def fetch_wiki_titles_dbtitles():
         with open(file=WIKI_FILE_PATH, mode='r') as file:
             count = 0
 
+            # TRY: insert on conflict
+            insert_titles_sql = """INSERT INTO wikipedia (database_title, wikipedia_title)
+                                       (SELECT %s, %s FROM wikipedia WHERE redirections = %s);"""
+
+            insert_redirections_sql = """INSERT INTO wikipedia (redirections)
+                                       (SELECT %s FROM wikipedia WHERE database_title = %s or database_title = %s);"""
+
             while count <= LINE_COUNT:
                 line = file.readline()
 
@@ -77,6 +84,8 @@ def fetch_wiki_titles_dbtitles():
                 wikipedia_title = None
 
                 redirections = None
+
+                title_to_match_redirections = None
 
                 if not bool(line.strip()):
                     count+=1
@@ -98,44 +107,58 @@ def fetch_wiki_titles_dbtitles():
 
                 root = parser.close()
 
-                for event, element in etree.iterparse(BytesIO(etree.tostring(root))):
+                iterparse_lxml = etree.iterparse(BytesIO(etree.tostring(root)))
+
+                for event, element in iterparse_lxml:
                     try:
                         if element.tag.strip() == 'title':
-                            database_title = element.text
+                            database_title = element.text.lower()
 
                         elif element.tag.strip() == 'text':
-                            if re.search(REDIRECTION_REGEX, element.text.strip()) \
-                            and '#REDIRECT' in element.text.strip():
-                                wikipedia_title = re.findall(REDIRECTION_REGEX, element.text.strip())[0][2:-2]
+                            match = re.findall(REDIRECTION_REGEX, element.text.strip())
 
-                                break
+                            if match is not None:
+                                if '#REDIRECT' in element.text.strip()[:10]:
+                                    wikipedia_title = match[0][2:-2].lower()
 
-                            else:
-                                redirections = re.findall(REDIRECTION_REGEX, element.text)
+                                    break
 
-                                redirections = json.dumps([red[2:-2] for red in redirections])
+                                else:
+                                    redirections = json.dumps([redirection[2:-2].lower() for redirection in match])
 
-                    except (TypeError, IndexError, AttributeError) as e:
+                                    title_to_match_redirections_f = lambda : [element.text for event, element in etree.iterparse(BytesIO(etree.tostring(root))) if element.tag.strip() == 'title']
+
+                                    title_to_match_redirections = title_to_match_redirections_f()[0].lower()
+
+                    except (TypeError, IndexError, KeyError, AttributeError) as e:
                         logging.warning(e)
                         print(count)
 
-                if database_title is None or wikipedia_title is None:
+                if database_title is not None and wikipedia_title is not None:
+                    print("database_title: {0}\nwikipedia_title: {1}\n".format(database_title, wikipedia_title))
+
+                    cur.execute(insert_titles_sql, (
+                        database_title,
+                        wikipedia_title,
+                        redirections
+                    ))
+
                     continue
 
-                print("database_title: {0}\nwikipedia_title: {1}\n".format(database_title, wikipedia_title))
+                if title_to_match_redirections is not None and redirections is not None:
+                    print("title_to_match_redirections: {0}\nredirections: {1}\n".format(title_to_match_redirections, redirections))
 
-                sql = """INSERT INTO wikipedia (database_title, wikipedia_title)
-                                VALUES(%s, %s)"""
+                    cur.execute(insert_redirections_sql, (
+                        redirections,
+                        database_title,
+                        wikipedia_title
+                    ))
 
-                cur.execute(sql, (
-                    database_title,
-                    wikipedia_title
-                ))
+                    continue
 
-                print("Succesfully updated database")
-                break
+        print("Succesfully updated database")
 
-    except (TypeError, IndexError, AttributeError) as e:
+    except (TypeError, IndexError, KeyError, AttributeError) as e:
         print(e)
 
     finally:
