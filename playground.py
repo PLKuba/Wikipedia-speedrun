@@ -10,7 +10,9 @@ from concurrent.futures import CancelledError
 from concurrent.futures import ThreadPoolExecutor
 import functools
 import itertools
-from CONFIG.config import DATABASE, PASSWORD, USER, PORT, HOST
+from CONFIG.config import DATABASE, PASSWORD, USER, PORT, HOST,\
+get_id_by_title_titles, insert_titles,update_tiles, get_id_by_title_redirections,\
+insert_redirections, update_redirections, insert_pages
 
 
 # total lines in wiki file
@@ -21,14 +23,6 @@ WIKI_FILE_PATH = 'DATA/enwiki-20211220-pages-articles-multistream.xml'
 TEST_FILE_PATH = 'DATA/test.xml'
 # regex to match redirections in page eg. "[[xyz]]"
 REDIRECTION_REGEX = r'\[\[[^\]^\[]{1,}\]\]'
-
-# establish db connection
-conn = connect(database=DATABASE, user=USER,
-               password=PASSWORD, host=HOST,
-               port=PORT)
-
-cur = conn.cursor()
-
 
 # decorator that measures the time
 def measure_time(func):
@@ -50,50 +44,18 @@ def measure_time(func):
     return dec_inner
 
 
-# function to fetch wikipedia titles and database titles
 @measure_time
-def fetch_wiki_titles_dbtitles():
+def insert_pages_to_db(page_limit=10):
     try:
         with open(file=WIKI_FILE_PATH, mode='r') as file:
+            total_pages = 1
+
             count = 0
 
-            get_id_by_title_titles = """SELECT id FROM wikipedia WHERE title_to_match=%s OR title_to_match=%s"""
-
-            insert_titles = """INSERT INTO wikipedia (database_title, wikipedia_title, title_to_match)
-                                    VALUES(%s, %s, %s)"""
-
-            update_tiles = """INSERT INTO wikipedia (id)
-                                    VALUES(%s)
-                                    ON CONFLICT (id)
-                                        DO
-                                            UPDATE SET
-                                            database_title=%s,
-                                            wikipedia_title=%s"""
-
-            get_id_by_title_redirections = """SELECT id FROM wikipedia WHERE title_to_match=%s"""
-
-            insert_redirections = """INSERT INTO wikipedia (redirections, title_to_match)
-                                        VALUES(%s, %s)"""
-
-            update_redirections = """INSERT INTO wikipedia (id)
-                                        VALUES(%s)
-                                        ON CONFLICT (id)
-                                            DO
-                                                UPDATE SET
-                                                redirections=%s"""
-
-            while count <= LINE_COUNT:
+            while count <= LINE_COUNT and total_pages <= page_limit:
                 line = file.readline()
 
-                parser = etree.XMLParser()
-
-                database_title = None
-
-                wikipedia_title = None
-
-                redirections = None
-
-                title_to_match_redirections = None
+                # parser = etree.XMLParser()
 
                 if not bool(line.strip()):
                     count+=1
@@ -101,121 +63,194 @@ def fetch_wiki_titles_dbtitles():
                     continue
 
                 if '<page>' in line:
+                    lines_arr = []
+
                     while '</page>' not in line:
-                        parser.feed(line)
+                        # parser.feed(line)
+                        lines_arr.append(line)
 
                         count += 1
 
                         line = file.readline()
 
-                    parser.feed(line)
+                    # parser.feed(line)
+                    lines_arr.append(line)
+
+                    total_pages += 1
 
                 else:
                     continue
+                # print(str_to_pass)
+                cur.execute(insert_pages, (lines_arr,))
 
-                root = parser.close()
+                # root = parser.close()
 
-                iterparse_lxml = etree.iterparse(BytesIO(etree.tostring(root)))
+                # root_string = etree.tostring(root)
 
-                for event, element in iterparse_lxml:
-                    try:
-                        if element.tag.strip() == 'title':
-                            database_title = element.text.lower()
+                # print(etree.tostring(root).decode('utf-8'))
+    except (TypeError, IndexError, KeyError, AttributeError) as e:
+        logging.exception(e)
 
-                        elif element.tag.strip() == 'text':
-                            match = re.findall(REDIRECTION_REGEX, element.text.strip())
+    finally:
+        # if conn.closed:
+        #     conn.close()
+        pass
 
-                            if match is not None:
-                                if '#REDIRECT' in element.text.strip()[:10]:
-                                    wikipedia_title = match[0][2:-2].lower()
 
-                                    break
+# function to fetch wikipedia titles and database titles
+@measure_time
+def update_db_with_page_values(page_lines):
+    try:
+        count = 0
 
-                                else:
-                                    redirections = json.dumps([redirection[2:-2].lower() for redirection in match])
+        database_title = None
 
-                                    title_to_match_redirections_f = lambda : [element.text for event, element in etree.iterparse(BytesIO(etree.tostring(root))) if element.tag.strip() == 'title']
+        wikipedia_title = None
 
-                                    title_to_match_redirections = title_to_match_redirections_f()[0].lower()
+        redirections = None
 
-                    except (TypeError, IndexError, KeyError, AttributeError) as e:
-                        logging.exception(e)
-                        print(count)
+        title_to_match_redirections = None
 
-                if database_title is not None and wikipedia_title is not None:
-                    # print("database_title: {0}\nwikipedia_title: {1}\n".format(database_title, wikipedia_title))
+        parser = etree.XMLParser()
 
-                    cur.execute(get_id_by_title_titles, (
-                        wikipedia_title,
-                        database_title,
-                    ))
+        for line in page_lines:
+            parser.feed(line)
 
-                    res = cur.fetchone()
+        root = parser.close()
 
-                    if res is None:
-                        cur.execute(insert_titles, (
-                            database_title,
-                            wikipedia_title,
-                            wikipedia_title,
-                        ))
+        iterparse_lxml = etree.iterparse(BytesIO(etree.tostring(root)))
 
-                    else:
-                        id = res[0]
-                        # print('ID: ', id)
+        for event, element in iterparse_lxml:
+            try:
+                if element.tag.strip() == 'title':
+                    database_title = element.text.lower()
 
-                        cur.execute(update_tiles, (
-                            id,
-                            database_title,
-                            wikipedia_title,
-                        ))
+                elif element.tag.strip() == 'text':
+                    match = re.findall(REDIRECTION_REGEX, element.text.strip())
 
-                    continue
+                    if match is not None:
+                        if '#REDIRECT' in element.text.strip()[:10]:
+                            wikipedia_title = match[0][2:-2].lower()
 
-                if title_to_match_redirections is not None and redirections is not None:
-                    # print("title_to_match_redirections: {0}\nredirections: [{1}, ...]\n".format(title_to_match_redirections, redirections.split(',')[0]))
+                            break
 
-                    cur.execute(get_id_by_title_redirections, (
-                        title_to_match_redirections,
-                    ))
+                        else:
+                            redirections = json.dumps([redirection[2:-2].lower() for redirection in match])
 
-                    res = cur.fetchone()
+                            title_to_match_redirections_f = lambda : [element.text for event, element in iterparse_lxml if element.tag.strip() == 'title']
 
-                    if res is None:
-                        cur.execute(insert_redirections, (
-                            redirections,
-                            title_to_match_redirections,
-                        ))
+                            title_to_match_redirections = title_to_match_redirections_f()[0].lower()
 
-                    else:
-                        id = res[0]
-                        # print('ID: ', id)
+            except (TypeError, IndexError, KeyError, AttributeError) as e:
+                logging.exception(e)
+                print(count)
 
-                        cur.execute(update_redirections, (
-                            id,
-                            redirections,
-                        ))
+        if database_title is not None and wikipedia_title is not None:
+            # print("database_title: {0}\nwikipedia_title: {1}\n".format(database_title, wikipedia_title))
 
-                    continue
+            cur.execute(get_id_by_title_titles, (
+                wikipedia_title,
+                database_title,
+            ))
 
-        # print("Succesfully updated database")
+            res = cur.fetchone()
+
+            if res is None:
+                cur.execute(insert_titles, (
+                    database_title,
+                    wikipedia_title,
+                    wikipedia_title,
+                ))
+
+            else:
+                id = res[0]
+                # print('ID: ', id)
+
+                cur.execute(update_tiles, (
+                    id,
+                    database_title,
+                    wikipedia_title,
+                ))
+
+            # conn.commit()
+            # conn.close()
+
+            return
+
+        if title_to_match_redirections is not None and redirections is not None:
+            # print("title_to_match_redirections: {0}\nredirections: [{1}, ...]\n".format(title_to_match_redirections, redirections.split(',')[0]))
+
+            cur.execute(get_id_by_title_redirections, (
+                title_to_match_redirections,
+            ))
+
+            res = cur.fetchone()
+
+            if res is None:
+                cur.execute(insert_redirections, (
+                    redirections,
+                    title_to_match_redirections,
+                ))
+
+            else:
+                id = res[0]
+                # print('ID: ', id)
+
+                cur.execute(update_redirections, (
+                    id,
+                    redirections,
+                ))
+
+            # conn.commit()
+            # conn.close()
+
+            return
+
+        print("Succesfully updated database")
 
     except (TypeError, IndexError, KeyError, AttributeError) as e:
         logging.exception(e)
 
     finally:
-        if conn.closed:
-            conn.close()
-
-
-def main():
-    fetch_wiki_titles_dbtitles()
+        # if conn.closed:
+        #     conn.close()
+        pass
 
 
 if __name__ == "__main__":
+    # establish db connection
+    conn = connect(database=DATABASE, user=USER,
+                   password=PASSWORD, host=HOST,
+                   port=PORT)
+
+    cur = conn.cursor()
+
     with open(file='sql_scripts/create_wikipedia_table.sql') as f:
         cur.execute(f.read())
 
-    main()
+    with open(file='sql_scripts/create_wikipedia_pages_table.sql') as f:
+        cur.execute(f.read())
+
+    # how many pages to insert to db
+    insert_pages_to_db(page_limit=10)
+
+    get_page_from_db = """SELECT lxml_page FROM wikipedia_pages LIMIT %s"""
+
+    pages_to_fetch = 1
+
+    cur.execute(get_page_from_db, (
+        pages_to_fetch
+    ))
+
+    res = cur.fetchall()
+
+    update_db_with_page_values(res[0][0])
 
     conn.commit()
     conn.close()
+
+
+# TODO: NEW PLAN ON MULTITHREADING THIS THINGS
+# TODO: DONE       # WRITE ALL PAGES TO DATABASE (THIS WILL BE ARRAY LIKE THING) (CREATE SEPERATE TABLE)
+# TODO: DONE       # CREATE TABLE WITH USER DEFINED TYPES
+# TODO: MULTITHREAD THIS THING :)
