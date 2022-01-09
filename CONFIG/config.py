@@ -38,3 +38,5 @@ update_redirections = """INSERT INTO wikipedia (id)
                                 DO
                                     UPDATE SET
                                     redirections=%s"""
+
+insert_pages = "INSERT INTO wikipedia_pages (lxml_page) VALUES (%s)"
