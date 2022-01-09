@@ -45,56 +45,40 @@ def measure_time(func):
 
 
 @measure_time
-def insert_pages_to_db(page_limit=10):
-    try:
-        with open(file=WIKI_FILE_PATH, mode='r') as file:
-            total_pages = 1
+def insert_pages_to_db(page_limit=5):
+    with open(file=WIKI_FILE_PATH, mode='r') as file:
+        total_pages = 1
 
-            count = 0
+        count = 0
 
-            while count <= LINE_COUNT and total_pages <= page_limit:
+        while count <= LINE_COUNT and total_pages <= page_limit:
+            try:
                 line = file.readline()
 
-                # parser = etree.XMLParser()
-
+                # skip blank lines
                 if not bool(line.strip()):
                     count+=1
 
                     continue
 
-                if '<page>' in line:
-                    lines_arr = []
+                lines_arr = []
 
-                    while '</page>' not in line:
-                        # parser.feed(line)
-                        lines_arr.append(line)
-
-                        count += 1
-
-                        line = file.readline()
-
-                    # parser.feed(line)
+                while '</page>' not in line or '<page>' in line:
                     lines_arr.append(line)
 
-                    total_pages += 1
+                    count += 1
 
-                else:
-                    continue
-                # print(str_to_pass)
+                    line = file.readline()
+
+
+                lines_arr.append(line)
+
+                total_pages += 1
+
                 cur.execute(insert_pages, (lines_arr,))
 
-                # root = parser.close()
-
-                # root_string = etree.tostring(root)
-
-                # print(etree.tostring(root).decode('utf-8'))
-    except (TypeError, IndexError, KeyError, AttributeError) as e:
-        logging.exception(e)
-
-    finally:
-        # if conn.closed:
-        #     conn.close()
-        pass
+            except (TypeError, IndexError, KeyError, AttributeError) as e:
+                logging.exception(e)
 
 
 # function to fetch wikipedia titles and database titles
