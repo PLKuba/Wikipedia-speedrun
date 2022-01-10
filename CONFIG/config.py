@@ -40,3 +40,7 @@ update_redirections = """INSERT INTO wikipedia (id)
                                     redirections=%s"""
 
 insert_pages = "INSERT INTO wikipedia_pages (lxml_page) VALUES (%s)"
+
+get_pages_from_db = """SELECT lxml_page FROM wikipedia_pages LIMIT %s"""
+
+get_all_pages_from_db = """SELECT lxml_page FROM wikipedia_pages"""
