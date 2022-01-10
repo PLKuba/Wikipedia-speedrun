@@ -6,13 +6,15 @@ from datetime import datetime
 import configparser
 import logging
 from psycopg2 import connect
+import concurrent.futures
 from concurrent.futures import CancelledError
 from concurrent.futures import ThreadPoolExecutor
 import functools
 import itertools
 from CONFIG.config import DATABASE, PASSWORD, USER, PORT, HOST,\
 get_id_by_title_titles, insert_titles,update_tiles, get_id_by_title_redirections,\
-insert_redirections, update_redirections, insert_pages
+insert_redirections, update_redirections, insert_pages, get_pages_from_db,\
+get_all_pages_from_db
 
 
 # total lines in wiki file
@@ -23,6 +25,9 @@ WIKI_FILE_PATH = 'DATA/enwiki-20211220-pages-articles-multistream.xml'
 TEST_FILE_PATH = 'DATA/test.xml'
 # regex to match redirections in page eg. "[[xyz]]"
 REDIRECTION_REGEX = r'\[\[[^\]^\[]{1,}\]\]'
+# max number of threads
+MAX_THREADS = 30
+
 
 # decorator that measures the time
 def measure_time(func):
@@ -44,14 +49,14 @@ def measure_time(func):
     return dec_inner
 
 
-@measure_time
-def insert_pages_to_db(page_limit=5):
+def insert_pages_to_db(cur, page_limit=None,):
+    logging.warning(f"Inserting {page_limit} pages to DB")
     with open(file=WIKI_FILE_PATH, mode='r') as file:
         total_pages = 1
 
         count = 0
 
-        while count <= LINE_COUNT and total_pages <= page_limit:
+        while count <= LINE_COUNT and (page_limit is None or total_pages <= page_limit):
             try:
                 line = file.readline()
 
@@ -63,38 +68,37 @@ def insert_pages_to_db(page_limit=5):
 
                 lines_arr = []
 
-                while '</page>' not in line or '<page>' in line:
+                # getting a page
+                if '<page>' in line:
+                    while '</page>' not in line:
+                        lines_arr.append(line)
+
+                        count += 1
+
+                        line = file.readline()
+
                     lines_arr.append(line)
 
-                    count += 1
+                    total_pages += 1
+                else:
+                    continue
 
-                    line = file.readline()
+                cur.execute(insert_pages, (
+                    lines_arr,
+                ))
 
-
-                lines_arr.append(line)
-
-                total_pages += 1
-
-                cur.execute(insert_pages, (lines_arr,))
+                conn.commit()
 
             except (TypeError, IndexError, KeyError, AttributeError) as e:
                 logging.exception(e)
 
+    # print("Succesfully updated database")
+
 
 # function to fetch wikipedia titles and database titles
-@measure_time
-def update_db_with_page_values(page_lines):
+def update_db_with_page_values(cur, page_lines):
     try:
-        count = 0
-
-        database_title = None
-
-        wikipedia_title = None
-
-        redirections = None
-
-        title_to_match_redirections = None
-
+        # making a iterparse_lxml object from array
         parser = etree.XMLParser()
 
         for line in page_lines:
@@ -104,6 +108,15 @@ def update_db_with_page_values(page_lines):
 
         iterparse_lxml = etree.iterparse(BytesIO(etree.tostring(root)))
 
+        database_title = None
+
+        wikipedia_title = None
+
+        redirections = None
+
+        title_to_match_redirections = None
+
+        # detecting an article page and redirection page
         for event, element in iterparse_lxml:
             try:
                 if element.tag.strip() == 'title':
@@ -121,16 +134,19 @@ def update_db_with_page_values(page_lines):
                         else:
                             redirections = json.dumps([redirection[2:-2].lower() for redirection in match])
 
-                            title_to_match_redirections_f = lambda : [element.text for event, element in iterparse_lxml if element.tag.strip() == 'title']
+                            title_to_match_redirections_f = lambda: [element.text.lower() for event, element in etree.iterparse(BytesIO(etree.tostring(root))) if element.tag.strip().lower() == 'title']
 
-                            title_to_match_redirections = title_to_match_redirections_f()[0].lower()
+                            title_to_match_redirections = title_to_match_redirections_f()[0]
 
-            except (TypeError, IndexError, KeyError, AttributeError) as e:
+            except (TypeError, IndexError, KeyError, AttributeError, IndexError) as e:
                 logging.exception(e)
-                print(count)
 
+        # print(title_to_match_redirections, redirections)
+        # print(wikipedia_title, database_title)
+
+        # inserting data into db
         if database_title is not None and wikipedia_title is not None:
-            # print("database_title: {0}\nwikipedia_title: {1}\n".format(database_title, wikipedia_title))
+            # print("wikipedia_title: {0}\ndatabase_title: [{1}, ...]\n".format(wikipedia_title, database_title))
 
             cur.execute(get_id_by_title_titles, (
                 wikipedia_title,
@@ -148,18 +164,12 @@ def update_db_with_page_values(page_lines):
 
             else:
                 id = res[0]
-                # print('ID: ', id)
 
                 cur.execute(update_tiles, (
                     id,
                     database_title,
                     wikipedia_title,
                 ))
-
-            # conn.commit()
-            # conn.close()
-
-            return
 
         if title_to_match_redirections is not None and redirections is not None:
             # print("title_to_match_redirections: {0}\nredirections: [{1}, ...]\n".format(title_to_match_redirections, redirections.split(',')[0]))
@@ -178,27 +188,46 @@ def update_db_with_page_values(page_lines):
 
             else:
                 id = res[0]
-                # print('ID: ', id)
 
                 cur.execute(update_redirections, (
                     id,
                     redirections,
                 ))
 
-            # conn.commit()
-            # conn.close()
 
-            return
-
-        print("Succesfully updated database")
-
-    except (TypeError, IndexError, KeyError, AttributeError) as e:
+    except (TypeError, IndexError, KeyError, AttributeError, IndexError) as e:
         logging.exception(e)
 
-    finally:
-        # if conn.closed:
-        #     conn.close()
-        pass
+
+@measure_time
+def main(cur):
+    # how many pages to insert to db, if no argument or None passed, whole file will be inserted
+    pages_to_update = None
+
+    insert_pages_to_db(cur)
+
+    # how many pages to analyse, is None there's no LIMIT
+    pages_to_analyse = None
+
+    if pages_to_analyse is not None:
+        cur.execute(get_pages_from_db, (
+            pages_to_analyse,
+        ))
+    else:
+        cur.execute(get_all_pages_from_db)
+
+    res = cur.fetchall()
+
+    # for item in res:
+    #     update_db_with_page_values(cur=cur, page_lines=item[0])
+
+    with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
+        try:
+            logging.warning("Updating DB")
+            for item in res:
+                executor.submit(update_db_with_page_values, cur=cur, page_lines=item[0])
+        except CancelledError:
+            pass
 
 
 if __name__ == "__main__":
@@ -215,26 +244,7 @@ if __name__ == "__main__":
     with open(file='sql_scripts/create_wikipedia_pages_table.sql') as f:
         cur.execute(f.read())
 
-    # how many pages to insert to db
-    insert_pages_to_db(page_limit=10)
-
-    get_page_from_db = """SELECT lxml_page FROM wikipedia_pages LIMIT %s"""
-
-    pages_to_fetch = 1
-
-    cur.execute(get_page_from_db, (
-        pages_to_fetch
-    ))
-
-    res = cur.fetchall()
-
-    update_db_with_page_values(res[0][0])
+    main(cur)
 
     conn.commit()
     conn.close()
-
-
-# TODO: NEW PLAN ON MULTITHREADING THIS THINGS
-# TODO: DONE       # WRITE ALL PAGES TO DATABASE (THIS WILL BE ARRAY LIKE THING) (CREATE SEPERATE TABLE)
-# TODO: DONE       # CREATE TABLE WITH USER DEFINED TYPES
-# TODO: MULTITHREAD THIS THING :)
