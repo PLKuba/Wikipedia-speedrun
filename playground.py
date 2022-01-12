@@ -7,7 +7,7 @@ import configparser
 import logging
 from psycopg2 import connect
 import concurrent.futures
-from concurrent.futures import CancelledError
+from concurrent.futures import CancelledError, TimeoutError
 from concurrent.futures import ThreadPoolExecutor
 import functools
 import itertools
@@ -200,43 +200,41 @@ def update_db_with_page_values(cur, page_lines):
 
 
 @measure_time
-def main(cur):
-    # how many pages to insert to db, if no argument or None passed, whole file will be inserted
-    # pages_to_update = None
+def main(cur, step=1000, start_id=0):
+    try:
+        if step is not None:
+            cur.execute(CONFIG.config.get_range_pages_from_db, (
+                step,
+                start_id,
+            ))
 
-    # insert_pages_to_db(cur)
+            res = cur.fetchall()
 
-    # how many pages to analyse, is None there's no LIMIT
-    pages_to_analyse = None
-    """LIMIT x OFFSET y""" # is a range between (y, y+x]
+            start_id += step
 
+            while bool(res):
+                with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
+                    try:
+                        logging.warning("Updating DB")
 
-    cur.execute(CONFIG.config.get_range_pages_from_db,(
-        1000,
-        0
-    ))
+                        for item in res:
+                            print("id: ", item[0])
+                            executor.submit(update_db_with_page_values, cur=cur, page_lines=item[0])
 
-    res = cur.fetchall()
+                    except (CancelledError, TimeoutError):
+                        pass
 
-    if pages_to_analyse is not None:
-        cur.execute(CONFIG.config.get_pages_from_db, (
-            pages_to_analyse,
-        ))
-    else:
-        cur.execute(CONFIG.config.get_all_pages_from_db)
+                cur.execute(CONFIG.config.get_range_pages_from_db, (
+                    step,
+                    start_id,
+                ))
 
-    res = cur.fetchall()
+                res = cur.fetchall()
 
-    # for item in res:
-    #     update_db_with_page_values(cur=cur, page_lines=item[0])
+                start_id += step
 
-    with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
-        try:
-            logging.warning("Updating DB")
-            for item in res:
-                executor.submit(update_db_with_page_values, cur=cur, page_lines=item[0])
-        except CancelledError:
-            pass
+    except (TypeError, IndexError, KeyError, AttributeError, IndexError):
+        return None
 
 
 if __name__ == "__main__":
@@ -252,7 +250,6 @@ if __name__ == "__main__":
 
     # with open(file='sql_scripts/create_wikipedia_pages_table.sql') as f:
     #     cur.execute(f.read())
-
     main(cur)
 
     conn.commit()
