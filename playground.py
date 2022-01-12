@@ -11,10 +11,7 @@ from concurrent.futures import CancelledError
 from concurrent.futures import ThreadPoolExecutor
 import functools
 import itertools
-from CONFIG.config import DATABASE, PASSWORD, USER, PORT, HOST,\
-get_id_by_title_titles, insert_titles,update_tiles, get_id_by_title_redirections,\
-insert_redirections, update_redirections, insert_pages, get_pages_from_db,\
-get_all_pages_from_db
+import CONFIG.config
 
 
 # total lines in wiki file
@@ -25,6 +22,8 @@ WIKI_FILE_PATH = 'DATA/enwiki-20211220-pages-articles-multistream.xml'
 TEST_FILE_PATH = 'DATA/test.xml'
 # regex to match redirections in page eg. "[[xyz]]"
 REDIRECTION_REGEX = r'\[\[[^\]^\[]{1,}\]\]'
+# regex to match redirect title in page eg. "<redirect title="David Talbot" />\n"
+REDIRECT_TITLE_REGEX = r'<redirection_title = ".{0,255}">'
 # max number of threads
 MAX_THREADS = 30
 
@@ -56,7 +55,8 @@ def insert_pages_to_db(cur, page_limit=None,):
 
         count = 0
 
-        while count <= LINE_COUNT and (page_limit is None or total_pages <= page_limit):
+        # while count <= LINE_COUNT and (page_limit is None or total_pages <= page_limit):
+        while count <= LINE_COUNT:
             try:
                 line = file.readline()
 
@@ -83,7 +83,7 @@ def insert_pages_to_db(cur, page_limit=None,):
                 else:
                     continue
 
-                cur.execute(insert_pages, (
+                cur.execute(CONFIG.config.insert_pages, (
                     lines_arr,
                 ))
 
@@ -148,7 +148,7 @@ def update_db_with_page_values(cur, page_lines):
         if database_title is not None and wikipedia_title is not None:
             # print("wikipedia_title: {0}\ndatabase_title: [{1}, ...]\n".format(wikipedia_title, database_title))
 
-            cur.execute(get_id_by_title_titles, (
+            cur.execute(CONFIG.config.get_id_by_title_titles, (
                 wikipedia_title,
                 database_title,
             ))
@@ -156,7 +156,7 @@ def update_db_with_page_values(cur, page_lines):
             res = cur.fetchone()
 
             if res is None:
-                cur.execute(insert_titles, (
+                cur.execute(CONFIG.config.insert_titles, (
                     database_title,
                     wikipedia_title,
                     wikipedia_title,
@@ -165,7 +165,7 @@ def update_db_with_page_values(cur, page_lines):
             else:
                 id = res[0]
 
-                cur.execute(update_tiles, (
+                cur.execute(CONFIG.config.update_tiles, (
                     id,
                     database_title,
                     wikipedia_title,
@@ -174,14 +174,14 @@ def update_db_with_page_values(cur, page_lines):
         if title_to_match_redirections is not None and redirections is not None:
             # print("title_to_match_redirections: {0}\nredirections: [{1}, ...]\n".format(title_to_match_redirections, redirections.split(',')[0]))
 
-            cur.execute(get_id_by_title_redirections, (
+            cur.execute(CONFIG.config.get_id_by_title_redirections, (
                 title_to_match_redirections,
             ))
 
             res = cur.fetchone()
 
             if res is None:
-                cur.execute(insert_redirections, (
+                cur.execute(CONFIG.config.insert_redirections, (
                     redirections,
                     title_to_match_redirections,
                 ))
@@ -189,7 +189,7 @@ def update_db_with_page_values(cur, page_lines):
             else:
                 id = res[0]
 
-                cur.execute(update_redirections, (
+                cur.execute(CONFIG.config.update_redirections, (
                     id,
                     redirections,
                 ))
@@ -202,19 +202,28 @@ def update_db_with_page_values(cur, page_lines):
 @measure_time
 def main(cur):
     # how many pages to insert to db, if no argument or None passed, whole file will be inserted
-    pages_to_update = None
+    # pages_to_update = None
 
-    insert_pages_to_db(cur)
+    # insert_pages_to_db(cur)
 
     # how many pages to analyse, is None there's no LIMIT
     pages_to_analyse = None
+    """LIMIT x OFFSET y""" # is a range between (y, y+x]
+
+
+    cur.execute(CONFIG.config.get_range_pages_from_db,(
+        1000,
+        0
+    ))
+
+    res = cur.fetchall()
 
     if pages_to_analyse is not None:
-        cur.execute(get_pages_from_db, (
+        cur.execute(CONFIG.config.get_pages_from_db, (
             pages_to_analyse,
         ))
     else:
-        cur.execute(get_all_pages_from_db)
+        cur.execute(CONFIG.config.get_all_pages_from_db)
 
     res = cur.fetchall()
 
@@ -232,17 +241,17 @@ def main(cur):
 
 if __name__ == "__main__":
     # establish db connection
-    conn = connect(database=DATABASE, user=USER,
-                   password=PASSWORD, host=HOST,
-                   port=PORT)
+    conn = connect(database=CONFIG.config.DATABASE, user=CONFIG.config.USER,
+                   password=CONFIG.config.PASSWORD, host=CONFIG.config.HOST,
+                   port=CONFIG.config.PORT)
 
     cur = conn.cursor()
 
     with open(file='sql_scripts/create_wikipedia_table.sql') as f:
         cur.execute(f.read())
 
-    with open(file='sql_scripts/create_wikipedia_pages_table.sql') as f:
-        cur.execute(f.read())
+    # with open(file='sql_scripts/create_wikipedia_pages_table.sql') as f:
+    #     cur.execute(f.read())
 
     main(cur)
 
