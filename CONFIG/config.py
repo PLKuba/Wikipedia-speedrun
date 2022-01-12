@@ -44,3 +44,5 @@ insert_pages = "INSERT INTO wikipedia_pages (lxml_page) VALUES (%s)"
 get_pages_from_db = """SELECT lxml_page FROM wikipedia_pages LIMIT %s"""
 
 get_all_pages_from_db = """SELECT lxml_page FROM wikipedia_pages"""
+
+get_range_pages_from_db = """SELECT id, lxml_page FROM wikipedia_pages ORDER BY id LIMIT %s OFFSET %s"""
