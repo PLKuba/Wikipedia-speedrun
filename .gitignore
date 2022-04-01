@@ -136,3 +136,5 @@ DATA/wiki_data.json
 # config files
 CONFIG/test_pgadmin4.ini
 CONFIG/pgadmin4.ini
+.DS_Store
+.idea/
